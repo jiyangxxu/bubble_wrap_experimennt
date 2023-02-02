@@ -1,0 +1,375 @@
+---
+title: "STAT425 Final Case Study"
+author: "Bingheng (Jason) Li, Chengbo (Barrett) Li, Jiyang (Edith) Xu"
+date: "2022-12-03"
+output: html_document
+---
+## Part 1: Data Processing
+We import the dataset provided to us firstly.
+```{r}
+bubblewrap_ <- read.csv("bubblewrap.csv", header = TRUE)
+head(bubblewrap_)
+```
+`line_speed`(line speed, m/mm) and `loading`(percent loading of additives, %) are factors.
+<br />
+`rate`(production rate, lbs/hr) is the response variable.
+<br />
+Our goal is find o find the optimal combination of `line_speed` and `loading` that results in the highest `rate`.
+<br />
+We delete run orders 2, 3, 5 of Replication 2 because the quality of the bubble wrap was not acceptable in these run order groups of Replication 2, so the system failed to produce an output in practice.
+```{r}
+bubblewrap <- bubblewrap_[!(bubblewrap_$replication == "2" & (bubblewrap_$run_order == 2 | bubblewrap_$run_order == 3 | bubblewrap_$run_order == 5)),]
+```
+`replication` and `run_order` are not factor, but they can be used for sequence plot when checking serial dependence assumption; so we keep them.
+```{r}
+bubblewrap$loading <- as.factor(bubblewrap$loading)
+bubblewrap$line_speed <- as.factor(bubblewrap$line_speed)
+head(bubblewrap)
+is.factor(bubblewrap$line_speed) # to confirm that line_speed is used as factor
+is.factor(bubblewrap$loading) #to confirm that loading is used as factor
+```
+
+
+### Graphic Visualization
+
+#### Box-Plot(s)
+We visualize our data with box plots for each factor separately.
+
+##### For line_speed
+
+Firstly, we check the box plot for `line_speed`:
+```{r}
+boxplot(rate~line_speed, data = bubblewrap, outline=FALSE)
+stripchart(rate~line_speed, data=bubblewrap, method="jitter", col="blue", vertical=TRUE, add=TRUE)
+```
+
+Based on this plot, we find that the production rate that `line_speed` at all three levels are at the same level, but we cannot tell whether if there is not a statistically difference here.
+
+##### For loading
+
+Now, we check the box-plot for `loading`:
+```{r}
+boxplot(rate~loading, data = bubblewrap, outline=FALSE)
+stripchart(rate~loading, data=bubblewrap, method="jitter", col="blue", vertical=TRUE, add=TRUE)
+```
+
+Based on this plot, we find that `loading` at all three levels are at different levels.
+<br />
+Among all these three levels, the production rate is the largest when `loading` is 4, and it is the smallest when `loading` is 2.
+<br />
+However, we cannot tell whether there is a statistically difference.
+<br />
+Since there are boxes overlapping in both box plots, we need to further construct interaction plots to investigate their relationships.
+
+#### Interaction Plot(s)
+
+We construct the interaction plots to investigate whether interactions are presented:
+
+##### For line_speed
+
+```{r}
+interaction.plot(bubblewrap$line_speed, bubblewrap$loading, bubblewrap$rate)
+```
+
+##### For loading
+
+```{r}
+interaction.plot(bubblewrap$loading, bubblewrap$line_speed, bubblewrap$rate)
+```
+
+There are intersecting lines in both graph which imply interactions are presented, but we cannot test statistical significance using interaction plot.
+<br />
+Therefore, we further proceed to test whether if the interactions are statistically significant.
+
+## Part 2: Model Selection
+
+### Analysis of the Two-Way ANOVA Model
+
+#### Test Interaction Significance
+
+##### Model with Interactions
+To investigate whether the interactions are statistically significant or not, we start with the model with interactions:
+```{r}
+library(car)
+bubblewrap.full = lm(rate ~ loading*line_speed, data = bubblewrap)
+```
+We have to take an unbalanced anova approach because the treatment sample sizes are unequal, recalling that we decide to drop the run time groups 2, 3, 5 in Replication 2.
+<br />
+Since the order of factors in `anova()` command changes the result for unbalanced anova, we use the` Anova()` command with Type = "III" specification, do partial F-test and based all our decisions on that.
+<br />
+```{r}
+Anova(lm(rate ~ loading*line_speed, data = bubblewrap), type = "III")
+```
+The p-value for the interaction term `loading:line_speed` here is 0.6426, which is larger than 0.05; so we conclude that the interaction term is not statistically significant. We remove it and fit the additive model.
+
+#### Test Factor Significance
+
+##### Additive Model
+
+We fit the additive model and test factor significance:
+```{r}
+bubblewrap.additive = lm(rate ~ loading+line_speed, data = bubblewrap)
+Anova(lm(rate ~ loading+line_speed, data = bubblewrap), type = "III")
+```
+In the additive model, `loading` is statistically significant with a p-value 0.00575 < 0.05, and `line_speed` is not statistically significant with a p-value 0.10016 > 0.05; so we remove `line_speed` to get our final model.
+```{r}
+bubblewrap.loading = lm(rate~loading, data = bubblewrap)
+```
+
+## Part 3: Diagnostics for Previous Model
+Now, we should check model assumptions.
+
+### Checking Constancy of Variance
+
+#### Residuals Plot
+We use a residuals plot (specifically, plot the residuals against fitted values) to see whether the constant variance assumption holds:
+```{r}
+plot(bubblewrap.loading, which = 1)
+```
+
+It seems that the constant variance assumption is not met, we further construct Breusch-Pagan Test to confirm this:
+
+#### Breusch-Pagan Test
+
+Null Hypothesis $H_0$: Variance is constant.
+<br />
+Alternative Hypothesis $H_1$: Variance is not constant.
+<br />
+<br />
+Decision Rule:
+<br />
+If p-value < 0.05, we reject the null.
+<br />
+```{r}
+library(lmtest)
+bptest(bubblewrap.loading)
+```
+The p-value of 0.01466 is smaller than the significance level of 0.05, therefore we reject the null, that is, we have enough evidence to say that the variance is not constant.
+
+### Checking Normality
+We start to check normality by looking at two plots: the QQ-plot and the histogram of the residuals.
+
+#### QQ-Plot
+```{r}
+plot(bubblewrap.loading, which = 2)
+```
+
+It is seemingly that the points in the QQ-plot falls on a straight line, we proceed to check the histogram of residuals.
+
+#### Histogram of Residuals
+```{r}
+hist(bubblewrap.loading$residuals)
+```
+
+We seem to have no departures from normailty assumption, and we do a Shapiro-Wilk Normality Test to ensure.
+
+#### Shapiro-Wilk Normality Test
+
+Null Hypothesis $H_0$: The distribution is normal.
+<br />
+Alternative Hypothesis $H_1$: The distribution is not normal.
+<br />
+<br />
+Decision Rule:
+<br />
+If p-value < 0.05, we reject the null.
+<br />
+```{r}
+shapiro.test(bubblewrap.loading$residuals)
+```
+
+The model is normal since p value 0.06379 > 0.05, so we fail to reject null and conclude that the model achieves normality.
+<br />
+We now have the result that the model we have above achieves normality but fails to achieve constant variance. We decide to do a box-cox transformation to fix the model's departures from constant variance later.
+<br />
+Now, we proceed to check for serial dependence assumption because the data provided can be time-sensitive since the order which the data were collected is provided to us.
+
+### Checking Serial Dependence Assumption
+
+To check this assumption, we plot the residuals against time, called the sequence plot.
+
+#### Sequence Plot
+```{r}
+plot(bubblewrap.loading$residuals ~ bubblewrap$run_order, type='p', xlab="Time", ylab="Residuals")
+abline(h=0, lty=2, col="blue", lwd=2)
+```
+
+There is no clear pattern according to the sequence plot, and we further do a Durbin-Watson test to ensure this conclusion.
+
+#### Durbin-Watson test
+
+Null Hypothesis $H_0$: There does not exist positive serial dependence.
+<br />
+Alternative Hypothesis $H_1$: Positive serial dependence exists.
+<br />
+<br />
+Decision Rule:
+<br />
+If DW < 2 (p-value < 0.05), then there is evidence for positive serial dependence.
+<br />
+```{r}
+library(lmtest)
+dwtest(bubblewrap.loading)
+```
+
+Based on the p-value of the DW test, we get 0.6626 > 0.05, we fail to reject null and conclude that the error terms are not positively auto-correlated.
+
+### Box-Cox Transformation
+Now, we do a box-cox transformation to fix the model's departures from constant variance presented in previous test
+```{r}
+library(MASS)
+boxcox(bubblewrap.loading, lambda=seq(-1, 10))
+```
+
+We select a $\lambda$ that maximizes the likelihood of the data.
+<br />
+Based on the graph, we can see that the value of $\lambda$ has a value which is the closest to 5, so we choose $\lambda$ = 5.
+```{r}
+bubblewrap.loading.box = lm(rate^5~loading, data = bubblewrap)
+```
+
+
+## Part 4: Diagnostics for Transformed Model
+We re-run an one-way ANOVA analysis, checking model assumptions for the transformed model.
+```{r}
+par(mfrow=c(1,2))
+qqnorm(bubblewrap.loading.box$res)
+plot(bubblewrap.loading.box$fitted, bubblewrap.loading.box$res, xlab="Fitted", ylab="Residuals")
+```
+
+There are seemingly no pattern for the residuals, but the normality assumption seems not to be satisfied. We now move on to check model assumptions.
+
+### Checking Constancy of Variance
+
+#### Residuals Plot
+```{r}
+plot(bubblewrap.loading.box, which = 1)
+```
+
+Based on the plot, we can see the constant variance assumption is met.
+
+#### Breusch-Pagan Test
+```{r}
+library(lmtest)
+bptest(bubblewrap.loading.box)
+```
+
+The p-value is 0.5032 > 0.05, therefore we fail to reject the null, which means the constant variance assumption is satisfied.
+
+### Checking Normality
+
+#### QQ-plot & Histogram of the Residuals
+```{r}
+qqnorm(bubblewrap.loading.box$res)
+hist(bubblewrap.loading.box$residuals)
+```
+
+Based on these two plots, we cannot say that the normality assumption is met.
+
+#### Shapiro-Wilk Normality Test
+```{r}
+shapiro.test(bubblewrap.loading.box$residuals)
+```
+
+This transformed model is not normal since p value 0.04961 < 0.05, so we reject the null and conclude that the model does not achieve normality.
+<br />
+The model does not meet normality assumption, but it does achieve constant variance assumption for the re-run of analysis.
+<br />
+We choose to use the transformed model since we consider fixing the departure from constant variance assumption to be the most important approach in our model selection step. 
+
+### Model Selection After Checking Assumption
+
+#### Test Interaction Significance
+
+##### Model with Interactions
+To investigate whether the interactions are statistically significant or not, we start with the model with interactions:
+```{r}
+bubblewrap.full = lm(rate^5~loading*line_speed, data = bubblewrap)
+Anova(bubblewrap.full, type = "III")
+```
+The p-value for interaction term `loading:line_speed` here is 0.935083, which is larger than 0.05 and therefore not statistically significant, so we remove it and fit the additive model.
+
+#### Test Factor Significance
+
+##### Additive Model
+```{r}
+bubblewrap.additive = lm(rate^5~loading+line_speed, data = bubblewrap)
+Anova(bubblewrap.additive, type = "III")
+```
+
+The p-value for `loading` is 0.0006235 and for `line_speed` 0.0435287, which are statistically significant, so we keep both `loading` and `line_speed` in the model.
+
+### Estimation
+
+#### Factor Effects Model
+We fit a factor effects model with sum constraints to perceive the effects of each level of the factors for the transformed model's response.
+<br />
+We need to define the sum constraints for each of the factors separately:
+```{r}
+contrasts(bubblewrap$loading) <- contr.sum
+contrasts(bubblewrap$line_speed) <- contr.sum
+```
+
+We can view the summary table:
+```{r}
+bubblewrap.loading = lm(rate^5~loading+line_speed, data = bubblewrap)
+summary(bubblewrap.loading)
+```
+
+#### Pairwise Comparisons
+We compute all pairwise family comparisons for each factor using Tukey’s family coefficient. Furthermore, we also use Tukey’s Test to see whether if there exists differences between levels of each factors separately.
+
+##### For loading
+```{r}
+TukeyHSD(aov(rate^5 ~ loading+line_speed, data=bubblewrap), "loading")
+```
+Based on this output, we can say that the `loading` level pairs 4-0 and 4-2 are statistically significant with p-values of 0.0066843 and 0.0066843, both smaller than 0.05.
+<br />
+This results in a conclusion that `loading` level 4 is statistically different from level 2 and level 0, and there is no statistical difference between `loading` level 0 and `loading` level 2.
+<br />
+We can also plot the intervals out:
+```{r}
+factorA_CI = TukeyHSD(aov(rate^5 ~ loading+line_speed, data=bubblewrap), "loading")
+plot(factorA_CI)
+```
+
+We can see the dotted line is not intersecting with the intervals of the pair 4-0 and 4-2 (these two intervals do not include 0) , which means there exists statistically difference in these two pairs.
+
+##### For line_speed
+```{r}
+TukeyHSD(aov(rate^5 ~ loading+line_speed, data=bubblewrap), "line_speed")
+```
+
+Based on this output, we can say that all three levels of `line_speed` are not statistically different because all level pairs have p-value larger than 0.05.
+<br />
+We can also plot the intervals out:
+
+```{r}
+factorB_CI = TukeyHSD(aov(rate^5 ~ loading+line_speed, data=bubblewrap), "line_speed")
+plot(factorB_CI)
+```
+
+As we can see, all three intervals intersect with the dotted line (in the other words, intervals include 0), meaning that they have no statistically differences.
+
+#### Scheffe's Method for Contrasts
+
+Lastly, we obtain Scheffe's family CIs for all pairwise comparisons to confirm our result once again:
+```{r}
+library(DescTools)
+g2 = aov(rate^5 ~ loading+line_speed, data = bubblewrap)
+ScheffeTest(g2, conf.level = 0.95)
+```
+
+Based on the result from above comparisons. The highest rate based on 95% CI for the mean differences is 4 % of loading of additives and 37 m/mm for line speed from the output in the first sight (without looking p-value), that is:
+<br />
+(Orders of levels are based on their mean production rate produced)
+<br />
+`Line Speed (m/mm)` 37 > 38 > 36
+<br />
+However, based on their p-values, we are able to conclude that we do not have enough evidence to say that there will be differences in the production rates whether we choose 36, 37, or 38 for line speed.
+<br />
+`Loading of additives (%)` 4 > 0 > 2
+<br />
+Similar with what we get when using Tukey's family coefficient, level 4 has statistically difference with level 0 and level 2 while level 0 and level 2 have no statistical difference in their effects for the response, production rate.
+
+### This is the end of the analysis for our final model, and our conclusion is included in our Case Study Report.
